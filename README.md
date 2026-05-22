@@ -301,14 +301,16 @@ This feature demonstrates understanding of:
 
 # Future Improvements
 
-* Resume upload feature
-* Email notifications
-* JWT authentication
-* Docker support
-* CI/CD pipeline integration
-* AI-based job recommendation system
-* Real-time chat between recruiter and candidate
-* Cloud deployment
+- Email notifications
+-Implement event-driven architecture using RabbitMQ/Kafka for scalable asynchronous recommendation processing.
+- Add Redis caching layer for faster dashboard loading and reduced database/vector search latency.
+-Introduce scheduled recommendation refresh mechanism based on newly posted jobs and user activity.
+-Implement API rate limiting and load balancing for handling high concurrent traffic.
+- Add recommendation feedback loop to continuously improve matching accuracy using user behavior data.
+- Docker support
+- CI/CD pipeline integration
+- Real-time chat between recruiter and candidate
+- Cloud deployment
 
 ---
 
