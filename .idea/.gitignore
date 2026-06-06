@@ -3,6 +3,8 @@
 /workspace.xml
 /application.properties
 /photos
-/target/jobportal-0.0.1-SNAPSHOT.jar
-//target/jobportal-0.0.1-SNAPSHOT.jar.original
+/target/
+*.jar
+*.war
+*.class
 
