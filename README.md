@@ -346,7 +346,7 @@ This project was built to strengthen my understanding of enterprise backend deve
 
 GitHub: [https://github.com/dexesh](https://github.com/dexesh)
 
-LinkedIn: Add your LinkedIn profile here
+LinkedIn:https://www.linkedin.com/in/devesh-choubey-063022220/
 
 ---
 
