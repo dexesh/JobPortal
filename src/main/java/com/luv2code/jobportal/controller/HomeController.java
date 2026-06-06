@@ -9,4 +9,8 @@ public class HomeController {
     public String home() {
        return "index";
     }
+    @GetMapping("/instance")
+public String instance() {
+    return System.getenv("HOSTNAME");
+}
 }

@@ -14,6 +14,7 @@ com\luv2code\jobportal\services\UsersService.class
 com\luv2code\jobportal\controller\RecruiterProfileController.class
 com\luv2code\jobportal\entity\JobSeekerProfile.class
 com\luv2code\jobportal\util\FileDownloadUtil.class
+com\luv2code\jobportal\config\WebSecurityConfig$1.class
 com\luv2code\jobportal\services\CreateEmbeddingService.class
 com\luv2code\jobportal\repository\JobSeekerSaveRepository.class
 com\luv2code\jobportal\entity\JobSeekerApply.class

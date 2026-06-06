@@ -70,4 +70,6 @@ public class UsersController {
 
         return "redirect:/";
     }
+    // just for test purpose delete later
+    
 }

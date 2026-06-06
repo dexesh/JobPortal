@@ -32,7 +32,7 @@ public class WebSecurityConfig {
             "/webjars/**",
             "/resources/**",
             "/assets/**",
-            "/css/**",
+            "/css/**","/actuator/**",
             "/summernote/**",
             "/js/**",
             "/*.css",
@@ -73,6 +73,32 @@ public class WebSecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        
+        BCryptPasswordEncoder delegate = new BCryptPasswordEncoder();
+
+    return new PasswordEncoder() {
+
+        @Override
+        public String encode(CharSequence rawPassword) {
+            return delegate.encode(rawPassword);
+        }
+
+        @Override
+        public boolean matches(CharSequence rawPassword,
+                               String encodedPassword) {
+
+            long start = System.currentTimeMillis();
+
+            boolean result =
+                    delegate.matches(rawPassword, encodedPassword);
+
+            System.out.println(
+                    "BCrypt took "
+                    + (System.currentTimeMillis() - start)
+                    + " ms");
+
+            return result;
+        }
+    };
     }
 }
