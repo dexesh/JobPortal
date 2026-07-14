@@ -4,8 +4,10 @@ import io.pinecone.clients.Index;
 import io.pinecone.clients.Pinecone;
 import io.pinecone.unsigned_indices_model.QueryResponseWithUnsignedIndices;
 import io.pinecone.unsigned_indices_model.ScoredVectorWithUnsignedIndices;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -13,29 +15,37 @@ import java.util.List;
 
 @Service
 public class PinconeService {
+
+    private static final Logger log = LoggerFactory.getLogger(PinconeService.class);
+
     @Autowired
     private final Pinecone pinecone;
+
+    @Value("${pinecone.index.name:embeddingindex}")
+    private String indexName;
 
     public PinconeService(Pinecone pinecone) {
         this.pinecone = pinecone;
     }
 
-    @Async
     public void storeEmbedding(float[] embedding, String jobid) {
-        // Implement the logic to store the embedding in Pinecone using the API key
-        // This is a placeholder implementation, you should replace it with actual API calls
-        System.out.println("Storing embedding for job ID: " + jobid);
-        Index index = pinecone.getIndexConnection("embeddingindex");
+        if (embedding == null || embedding.length == 0) {
+            throw new IllegalArgumentException("Cannot store an empty embedding");
+        }
+        Index index = pinecone.getIndexConnection(indexName);
         ArrayList<Float> vector = new ArrayList<>();
         for (float e : embedding) {
             vector.add(e);
         }
         index.upsert(jobid, vector);
-        System.out.println("Stored in vector database");
+        log.info("[Pinecone] Indexed jobId={} with dimension={}", jobid, embedding.length);
     }
 
     public List<Integer> searchJobs(float[] embeddings) {
-        Index index = pinecone.getIndexConnection("embeddingindex");
+        if (embeddings == null || embeddings.length == 0) {
+            return List.of();
+        }
+        Index index = pinecone.getIndexConnection(indexName);
 
         // Convert float[] → List<Float>
         List<Float> vectors = new ArrayList<>();
@@ -43,20 +53,18 @@ public class PinconeService {
             vectors.add(e);
         }
 
-        // Build query request
         QueryResponseWithUnsignedIndices request = index.query(5, vectors, null, null, null, null, null, false, false);
-        // Execute query
-        ;// Execute query
-
-
-        // Extract job IDs
+        // Extract job IDs — skip any non-numeric IDs gracefully
         List<Integer> jobIds = new ArrayList<>();
 
         for (ScoredVectorWithUnsignedIndices match : request.getMatchesList()) {
-            System.out.println("Job ID: " + match.getId());
-            System.out.println("Score: " + match.getScore());
-
-            jobIds.add(Integer.parseInt(match.getId()));
+            try {
+                int jobId = Integer.parseInt(match.getId());
+                jobIds.add(jobId);
+                log.info("[Pinecone] Match: jobId={}, score={}", jobId, match.getScore());
+            } catch (NumberFormatException e) {
+                log.warn("[Pinecone] Skipping non-numeric vector ID: '{}'", match.getId());
+            }
         }
 
         return jobIds;

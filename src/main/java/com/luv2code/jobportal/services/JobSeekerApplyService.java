@@ -28,6 +28,10 @@ public class JobSeekerApplyService {
     }
 
     public void addNew(JobSeekerApply jobSeekerApply) {
+        boolean alreadyApplied = jobSeekerApplyRepository.findByUserId(jobSeekerApply.getUserId()).stream()
+                .anyMatch(existing -> existing.getJob().getJobPostId()
+                        .equals(jobSeekerApply.getJob().getJobPostId()));
+        if (alreadyApplied) return;
         jobSeekerApplyRepository.save(jobSeekerApply);
     }
 }

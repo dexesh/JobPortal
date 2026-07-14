@@ -25,7 +25,7 @@ public class Users {
     @DateTimeFormat(pattern = "dd-MM-yyyy")
     private Date registrationDate;
 
-    @ManyToOne(cascade = CascadeType.ALL)
+    @ManyToOne
     @JoinColumn(name = "userTypeId", referencedColumnName = "userTypeId")
     private UsersType userTypeId;
 

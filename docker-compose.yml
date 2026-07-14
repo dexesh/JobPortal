@@ -5,18 +5,58 @@ services:
     container_name: app1
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3306/jobportal
+      SPRING_DATASOURCE_USERNAME: jobportal
+      SPRING_DATASOURCE_PASSWORD: jobportal
       SPRING_AI_OLLAMA_BASE_URL: http://host.docker.internal:11434
+      PINECONE_API_KEY: ${PINECONE_API_KEY:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-jobportal-cache-change-me}
+    volumes:
+      - ./photos:/app/photos
     ports:
       - "8081:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
 
   app2:
     build: .
     container_name: app2
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:3306/jobportal
+      SPRING_DATASOURCE_USERNAME: jobportal
+      SPRING_DATASOURCE_PASSWORD: jobportal
       SPRING_AI_OLLAMA_BASE_URL: http://host.docker.internal:11434
+      PINECONE_API_KEY: ${PINECONE_API_KEY:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-jobportal-cache-change-me}
+    volumes:
+      - ./photos:/app/photos
     ports:
       - "8082:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: jobportal-redis
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-jobportal-cache-change-me}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-jobportal-cache-change-me}
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
 
   nginx:
     image: nginx:latest
@@ -28,3 +68,6 @@ services:
     depends_on:
       - app1
       - app2
+
+volumes:
+  redis-data:

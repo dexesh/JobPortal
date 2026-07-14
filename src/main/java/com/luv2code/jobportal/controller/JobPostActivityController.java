@@ -64,12 +64,12 @@ public class JobPostActivityController {
     ) {
 
         model.addAttribute("partTime", Objects.equals(partTime, "Part-Time"));
-        model.addAttribute("fullTime", Objects.equals(partTime, "Full-Time"));
-        model.addAttribute("freelance", Objects.equals(partTime, "Freelance"));
+        model.addAttribute("fullTime", Objects.equals(fullTime, "Full-Time"));
+        model.addAttribute("freelance", Objects.equals(freelance, "Freelance"));
 
-        model.addAttribute("remoteOnly", Objects.equals(partTime, "Remote-Only"));
-        model.addAttribute("officeOnly", Objects.equals(partTime, "Office-Only"));
-        model.addAttribute("partialRemote", Objects.equals(partTime, "Partial-Remote"));
+        model.addAttribute("remoteOnly", Objects.equals(remoteOnly, "Remote-Only"));
+        model.addAttribute("officeOnly", Objects.equals(officeOnly, "Office-Only"));
+        model.addAttribute("partialRemote", Objects.equals(partialRemote, "Partial-Remote"));
 
         model.addAttribute("today", today);
         model.addAttribute("days7", days7);
@@ -173,13 +173,13 @@ public class JobPostActivityController {
 
     @GetMapping("/dashboard/recommendations")
     @ResponseBody
-    public CompletableFuture<List<java.util.Map<String, Object>>> getRecommendations() {
+    public CompletableFuture<java.util.Map<String, Object>> getRecommendations() {
 
         Object currentUserProfile = usersService.getCurrentUserProfile();
 
         if (!(currentUserProfile instanceof JobSeekerProfile)) {
-            return CompletableFuture.completedFuture(
-                    java.util.Collections.emptyList());
+            return CompletableFuture.completedFuture(recommendationPayload(
+                    "FORBIDDEN", "Recommendations are available to job seekers only.", java.util.Collections.emptyList()));
         }
 
         JobSeekerProfile seekerProfile = (JobSeekerProfile) currentUserProfile;
@@ -187,8 +187,8 @@ public class JobPostActivityController {
         String resumeFileName = seekerProfile.getResume();
 
         if (resumeFileName == null || resumeFileName.isEmpty()) {
-            return CompletableFuture.completedFuture(
-                    java.util.Collections.emptyList());
+            return CompletableFuture.completedFuture(recommendationPayload(
+                    "NO_RESUME", "Upload a resume to get personalised recommendations.", java.util.Collections.emptyList()));
         }
 
         String resumePath = "photos/candidate/" +
@@ -197,12 +197,12 @@ public class JobPostActivityController {
                 resumeFileName;
 
         return jobRecommendationService
-                .getRecommendedJobs(resumePath)
-                .thenApply(jobs -> {
+                .getRecommendedJobs(seekerProfile.getUserAccountId(), resumePath)
+                .thenApply(recommendation -> {
 
                     List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
 
-                    for (JobPostActivity j : jobs) {
+                    for (JobPostActivity j : recommendation.jobs()) {
 
                         java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
 
@@ -212,8 +212,17 @@ public class JobPostActivityController {
                         result.add(map);
                     }
 
-                    return result;
+                    return recommendationPayload(recommendation.status(), recommendation.message(), result);
                 });
+    }
+
+    private java.util.Map<String, Object> recommendationPayload(
+            String status, String message, List<java.util.Map<String, Object>> jobs) {
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("status", status);
+        payload.put("message", message);
+        payload.put("jobs", jobs);
+        return payload;
     }
 
     @GetMapping("global-search/")
@@ -231,12 +240,12 @@ public class JobPostActivityController {
             @RequestParam(value = "days30", required = false) boolean days30) {
 
         model.addAttribute("partTime", Objects.equals(partTime, "Part-Time"));
-        model.addAttribute("fullTime", Objects.equals(partTime, "Full-Time"));
-        model.addAttribute("freelance", Objects.equals(partTime, "Freelance"));
+        model.addAttribute("fullTime", Objects.equals(fullTime, "Full-Time"));
+        model.addAttribute("freelance", Objects.equals(freelance, "Freelance"));
 
-        model.addAttribute("remoteOnly", Objects.equals(partTime, "Remote-Only"));
-        model.addAttribute("officeOnly", Objects.equals(partTime, "Office-Only"));
-        model.addAttribute("partialRemote", Objects.equals(partTime, "Partial-Remote"));
+        model.addAttribute("remoteOnly", Objects.equals(remoteOnly, "Remote-Only"));
+        model.addAttribute("officeOnly", Objects.equals(officeOnly, "Office-Only"));
+        model.addAttribute("partialRemote", Objects.equals(partialRemote, "Partial-Remote"));
 
         model.addAttribute("today", today);
         model.addAttribute("days7", days7);
@@ -297,6 +306,13 @@ public class JobPostActivityController {
     public String addNew(JobPostActivity jobPostActivity, Model model) {
 
         Users user = usersService.getCurrentUser();
+        if (jobPostActivity.getJobPostId() != null) {
+            JobPostActivity existing = jobPostActivityService.getOne(jobPostActivity.getJobPostId());
+            if (user == null || existing.getPostedById() == null
+                    || !Objects.equals(existing.getPostedById().getUserId(), user.getUserId())) {
+                throw new org.springframework.security.access.AccessDeniedException("You do not own this job posting");
+            }
+        }
         if (user != null) {
             jobPostActivity.setPostedById(user);
         }
@@ -310,6 +326,11 @@ public class JobPostActivityController {
     public String editJob(@PathVariable("id") int id, Model model) {
 
         JobPostActivity jobPostActivity = jobPostActivityService.getOne(id);
+        Users user = usersService.getCurrentUser();
+        if (jobPostActivity.getPostedById() == null || user == null
+                || !Objects.equals(jobPostActivity.getPostedById().getUserId(), user.getUserId())) {
+            throw new org.springframework.security.access.AccessDeniedException("You do not own this job posting");
+        }
         model.addAttribute("jobPostActivity", jobPostActivity);
         model.addAttribute("user", usersService.getCurrentUserProfile());
         return "add-jobs";

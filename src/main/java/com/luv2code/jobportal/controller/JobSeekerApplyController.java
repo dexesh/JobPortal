@@ -47,7 +47,8 @@ public class JobSeekerApplyController {
         if (!(authentication instanceof AnonymousAuthenticationToken)) {
             if (authentication.getAuthorities().contains(new SimpleGrantedAuthority("Recruiter"))) {
                 RecruiterProfile user = recruiterProfileService.getCurrentRecruiterProfile();
-                if (user != null) {
+                if (user != null && jobDetails.getPostedById() != null
+                        && jobDetails.getPostedById().getUserId() == user.getUserAccountId()) {
                     model.addAttribute("applyList", jobSeekerApplyList);
                 }
             } else {

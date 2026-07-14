@@ -16,6 +16,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -121,14 +123,28 @@ public class JobSeekerProfileController {
 
     @GetMapping("/{id}")
     public String candidateProfile(@PathVariable("id") int id, Model model) {
-
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Users currentUser = usersRepository.findByEmail(authentication.getName())
+                .orElseThrow(() -> new UsernameNotFoundException("User not found."));
+        boolean recruiter = authentication.getAuthorities().contains(new SimpleGrantedAuthority("Recruiter"));
+        if (!recruiter && currentUser.getUserId() != id) {
+            throw new AccessDeniedException("You cannot access another candidate profile");
+        }
         Optional<JobSeekerProfile> seekerProfile = jobSeekerProfileService.getOne(id);
-        model.addAttribute("profile", seekerProfile.get());
+        model.addAttribute("profile", seekerProfile.orElseThrow(() -> new RuntimeException("Profile not found")));
         return "job-seeker-profile";
     }
 
     @GetMapping("/downloadResume")
     public ResponseEntity<?> downloadResume(@RequestParam(value = "fileName") String fileName, @RequestParam(value = "userID") String userId) {
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Users currentUser = usersRepository.findByEmail(authentication.getName())
+                .orElseThrow(() -> new UsernameNotFoundException("User not found."));
+        boolean recruiter = authentication.getAuthorities().contains(new SimpleGrantedAuthority("Recruiter"));
+        if (!recruiter && !String.valueOf(currentUser.getUserId()).equals(userId)) {
+            throw new AccessDeniedException("You cannot download another candidate's resume");
+        }
 
         FileDownloadUtil downloadUtil = new FileDownloadUtil();
         Resource resource = null;
