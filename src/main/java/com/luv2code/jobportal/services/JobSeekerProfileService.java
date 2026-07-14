@@ -19,13 +19,10 @@ public class JobSeekerProfileService {
     private final JobSeekerProfileRepository jobSeekerProfileRepository;
     private final UsersRepository usersRepository;
 
-    private final JobRecommendationService jobRecommendationService;
-
     public JobSeekerProfileService(JobSeekerProfileRepository jobSeekerProfileRepository,
-            UsersRepository usersRepository, JobRecommendationService jobRecommendationService) {
+            UsersRepository usersRepository) {
         this.jobSeekerProfileRepository = jobSeekerProfileRepository;
         this.usersRepository = usersRepository;
-        this.jobRecommendationService = jobRecommendationService;
     }
 
     public Optional<JobSeekerProfile> getOne(Integer id) {
@@ -33,11 +30,6 @@ public class JobSeekerProfileService {
     }
 
     public JobSeekerProfile addNew(JobSeekerProfile jobSeekerProfile) {
-        // Optional<JobSeekerProfile> id =
-        // jobSeekerProfileRepository.findById(jobSeekerProfile.getUserAccountId());
-        String resumString = jobSeekerProfile.getResume();
-        jobRecommendationService.getRecommendedJobs(resumString);
-
         return jobSeekerProfileRepository.save(jobSeekerProfile);
     }
 

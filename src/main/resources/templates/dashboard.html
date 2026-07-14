@@ -68,7 +68,7 @@
             <label th:unless="${user.firstName != null && user.lastName != null}" th:text="${username}"
                 class="nav-item nav-link px-2 me-3"></label>
 
-            <button class="myBtn-light me-5" onclick="window.location.href='/logout'">Logout</button>
+            <form th:action="@{/logout}" method="post"><button class="myBtn-light me-5" type="submit">Logout</button></form>
         </div>
     </header>
 
@@ -184,7 +184,7 @@
                 <th:block th:each="jobPost:${jobPost}">
                     <a th:href="@{/job-details-apply/{id}(id=${jobPost.jobPostId})}"
                         style="text-decoration: none; color: black">
-                        <div onclick="window.location=/job-details-apply/{id}(id=${jobPost.jobPostId})" class="job-row">
+                        <div class="job-row">
                             <div class="row">
                                 <div class="col-md-4">
                                     <label class="job-title text-left">
@@ -358,7 +358,7 @@
     <script type="text/javascript" th:src="@{/webjars/bootstrap/js/bootstrap.bundle.min.js}"></script>
 
     <script type="text/javascript" th:src="@{/js/main.js}"></script>
-    <script>
+    <script th:inline="javascript">
         $('#job').change(function () {
             $('#hidJob').val($(this).val());
         });
@@ -374,14 +374,21 @@
 
             // Cache key is scoped to the logged-in user so switching accounts
             // never shows a previous user's recommendations.
-            var CACHE_KEY = 'jobRecommendations_' + /*[[${username}]]*/ 'guest';
+            var CACHE_KEY = 'jobRecommendations_v2_' + /*[[${username}]]*/ 'guest';
 
-            function renderJobs(jobs) {
+            function escapeHtml(value) {
+                var node = document.createElement('div');
+                node.textContent = value == null ? '' : String(value);
+                return node.innerHTML;
+            }
+
+            function renderJobs(payload) {
+                var jobs = payload && payload.jobs;
                 if (!jobs || jobs.length === 0) {
                     body.innerHTML =
                         '<div class="rec-empty">' +
                         '<i class="fa-solid fa-file-circle-question"></i>' +
-                        '<p>Upload your resume to get personalised recommendations.</p>' +
+                        '<p>' + escapeHtml((payload && payload.message) || 'No matching jobs were found.') + '</p>' +
                         '</div>';
                     return;
                 }
@@ -390,7 +397,7 @@
                     html +=
                         '<a href="/job-details-apply/' + job.jobPostId + '" class="rec-card" style="text-decoration:none;">' +
                         '<i class="fa-solid fa-briefcase rec-job-icon"></i>' +
-                        '<span class="rec-job-title">' + job.jobTitle + '</span>' +
+                        '<span class="rec-job-title">' + escapeHtml(job.jobTitle) + '</span>' +
                         '<i class="fa-solid fa-chevron-right rec-arrow"></i>' +
                         '</a>';
                 });
@@ -398,7 +405,7 @@
             }
 
             // Use cached result if available (same tab session)
-            var cached = sessionStorage.getItem(CACHE_KEY);
+            var cached = null;
             if (cached) {
                 try {
                     renderJobs(JSON.parse(cached));
@@ -410,15 +417,18 @@
 
             // First visit: call backend and cache the result
             fetch('/dashboard/recommendations')
-                .then(function (res) { return res.json(); })
-                .then(function (jobs) {
+                .then(function (res) {
+                    if (!res.ok) throw new Error('Recommendation request failed: ' + res.status);
+                    return res.json();
+                })
+                .then(function (payload) {
                     // Only cache non-empty results.
                     // Empty = no resume yet; don't cache so the next visit
                     // re-fetches after the user uploads their resume.
-                    if (jobs && jobs.length > 0) {
-                        sessionStorage.setItem(CACHE_KEY, JSON.stringify(jobs));
+                    if (payload && payload.jobs && payload.jobs.length > 0) {
+                        sessionStorage.setItem(CACHE_KEY, JSON.stringify(payload));
                     }
-                    renderJobs(jobs);
+                    renderJobs(payload);
                 })
                 .catch(function () {
                     body.innerHTML =

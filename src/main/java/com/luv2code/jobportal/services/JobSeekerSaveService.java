@@ -26,6 +26,10 @@ public class JobSeekerSaveService {
     }
 
     public void addNew(JobSeekerSave jobSeekerSave) {
+        boolean alreadySaved = jobSeekerSaveRepository.findByUserId(jobSeekerSave.getUserId()).stream()
+                .anyMatch(existing -> existing.getJob().getJobPostId()
+                        .equals(jobSeekerSave.getJob().getJobPostId()));
+        if (alreadySaved) return;
         jobSeekerSaveRepository.save(jobSeekerSave);
     }
 

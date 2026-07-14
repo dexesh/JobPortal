@@ -47,6 +47,12 @@ public class WebSecurityConfig {
 
         http.authorizeHttpRequests(auth -> {
             auth.requestMatchers(publicUrl).permitAll();
+            auth.requestMatchers("/dashboard/add", "/dashboard/addNew", "/dashboard/edit/**",
+                    "/recruiter-profile/**").hasAuthority("Recruiter");
+            auth.requestMatchers("/dashboard/recommendations", "/job-details/apply/**",
+                    "/job-details/save/**", "/saved-jobs/**").hasAuthority("Job Seeker");
+            auth.requestMatchers("/job-seeker-profile/downloadResume", "/job-seeker-profile/*")
+                    .hasAnyAuthority("Recruiter", "Job Seeker");
             auth.anyRequest().authenticated();
         });
         http.formLogin(form->form.loginPage("/login").permitAll()
@@ -54,8 +60,7 @@ public class WebSecurityConfig {
                 .logout(logout-> {
                     logout.logoutUrl("/logout");
                     logout.logoutSuccessUrl("/");
-                }).cors(Customizer.withDefaults())
-                .csrf(csrf->csrf.disable());
+                }).cors(Customizer.withDefaults());
 
         return http.build();
     }

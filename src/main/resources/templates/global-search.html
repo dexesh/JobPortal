@@ -59,7 +59,7 @@
 
         <label class="nav-item nav-link px-2 me-3">Guest</label>
 
-        <button class="myBtn-light me-5" onclick="window.location.href='/logout'">Logout</button>
+        <form th:action="@{/logout}" method="post"><button class="myBtn-light me-5" type="submit">Logout</button></form>
     </div>
 </header>
 <section class="section">
@@ -215,7 +215,7 @@
             <th:block th:each="jobPost:${jobPost}">
                 <a th:href="@{/job-details-apply/{id}(id=${jobPost.jobPostId})}"
                    style=" text-decoration:none; color:black;">
-                    <div onclick="window.location=/job-details-apply/{id}(id=${jobPost.jobPostId})" class="job-row">
+                    <div class="job-row">
                         <div class="row ">
                             <div class="col-md-4">
                                 <label class="job-title text-left">

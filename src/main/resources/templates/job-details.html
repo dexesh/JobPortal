@@ -79,7 +79,7 @@
         />
         <label th:text="${user.firstName+' '+user.lastName}" class="nav-item nav-link px-2 me-3">John Doe</label>
 
-        <button class="myBtn-light me-5" onclick="window.location.href='/logout'">Logout</button>
+        <form th:action="@{/logout}" method="post"><button class="myBtn-light me-5" type="submit">Logout</button></form>
     </div>
 </header>
 
