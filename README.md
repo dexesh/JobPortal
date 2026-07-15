@@ -1,355 +1,330 @@
 # Job Portal Application
 
-## Overview
+A full-stack job portal that connects job seekers and recruiters. Recruiters can publish and manage jobs, while job seekers can search, save, apply, maintain a profile, upload a resume, and receive AI-powered job recommendations.
 
-A full-stack Job Portal web application built using Java and Spring Boot that connects job seekers and recruiters on a single platform. The application allows recruiters to post jobs and manage hiring activities, while job seekers can search, save, and apply for jobs.
+The application is built as a Spring Boot modular monolith and can run as multiple application instances behind Nginx. MySQL remains the source of truth, Redis provides shared caching and coordination, Ollama performs local AI inference, and Pinecone provides semantic job-vector search.
 
-This project demonstrates backend engineering concepts such as authentication, role-based authorization, database management, MVC architecture, and service-oriented design using Spring Boot.
+## Main features
 
----
+### Job seekers
 
-# Features
+- Register and authenticate securely.
+- Search and filter available jobs.
+- View, save, and apply for jobs.
+- Maintain a profile with skills, photo, and PDF resume.
+- Receive asynchronous semantic job recommendations.
 
-## Authentication & Authorization
+### Recruiters
 
-* Secure login and registration system
-* Role-based access for:
+- Maintain a recruiter profile.
+- Create and edit owned job postings.
+- View applicants for posted jobs.
+- Automatically index job content in Pinecone.
 
-  * Job Seekers
-  * Recruiters
-* Spring Security integration
+### Platform
 
-## Job Seeker Features
+- Role-based authorization with Spring Security.
+- CSRF-protected form actions and BCrypt password hashing.
+- MySQL persistence through Spring Data JPA.
+- Redis-backed AI result caching.
+- Multi-instance startup coordination with a Redis lock.
+- Docker Compose support for two application instances, Redis, and Nginx.
 
-* Search jobs using global search
-* View job details
-* Save jobs for later
-* Apply to jobs
-* Manage profile information
-* Track job activity
+## Application architecture
 
-## Recruiter Features
+All diagrams use straight, right-angle connectors to show the execution order clearly.
 
-* Post new jobs
-* Manage posted jobs
-* View applicants
-* Update recruiter profile
+### Request, login, and service flow
 
-## Search & Filtering
+```mermaid
+%%{init: {"flowchart": {"curve": "stepAfter"}}}%%
+flowchart TB
+    Browser["Browser: Thymeleaf pages and JavaScript"] --> Nginx["Nginx: sticky load balancing"]
+    Nginx --> App1["Spring Boot app1"]
+    Nginx --> App2["Spring Boot app2"]
+    App1 --> Security["Spring Security filter chain"]
+    App2 --> Security
 
-* Global search functionality
-* Search jobs by:
+    Security -->|Login POST and CSRF token| UserDetails["CustomUserDetailsService"]
+    UserDetails --> UsersRepository["UsersRepository"]
+    UsersRepository --> MySQL[(MySQL)]
+    MySQL --> UsersRepository
+    UsersRepository --> UserDetails
+    UserDetails --> BCrypt["BCrypt password verification"]
+    BCrypt -->|Valid credentials| SuccessHandler["Authentication success handler"]
+    SuccessHandler --> Dashboard["Dashboard controller"]
 
-  * Keywords
-  * Title
-  * Skills
-  * Location
+    Security -->|Authenticated request| Authorization["Role and ownership authorization"]
+    Authorization --> Controllers["MVC controllers"]
+    Controllers --> Services["Business services"]
+    Services --> Repositories["JPA repositories"]
+    Repositories --> MySQL
 
-## Backend Functionality
+    Services --> Redis[(Redis)]
+    Services --> Files["Shared resume and image storage"]
+    Services --> Ollama["Ollama AI services"]
+    Services --> Pinecone[(Pinecone job-vector index)]
 
-* RESTful architecture principles
-* Layered architecture:
+    Controllers --> Thymeleaf["Thymeleaf HTML response"]
+    Controllers --> JSON["Recommendation JSON response"]
+    Thymeleaf --> Browser
+    JSON --> Browser
+```
 
-  * Controller Layer
-  * Service Layer
-  * Repository Layer
-* Database integration with JPA/Hibernate
-* Entity relationships and persistence handling
+After authentication, Spring Security sends both recruiter and job-seeker requests through the same controller-service-repository layers. Role rules determine which workflows are available. MySQL handles persistent business data, while Redis, Ollama, Pinecone, and shared files support the recommendation subsystem.
 
----
+### Component responsibilities
 
-# Tech Stack
+| Component | Responsibility |
+|---|---|
+| Thymeleaf and JavaScript | Render server-side pages and load recommendations asynchronously. |
+| Spring Security | Authentication, role authorization, CSRF protection, and session management. |
+| Controllers and services | Execute job portal workflows and orchestrate recommendation processing. |
+| MySQL | Store users, profiles, jobs, skills, applications, and saved jobs. |
+| Resume storage | Store uploaded PDF resumes and profile images in the shared `photos` directory. |
+| Ollama | Summarize resumes with `llama3.2` and create vectors with `mxbai-embed-large`. |
+| Pinecone | Store one pooled vector per job and return semantically similar job IDs. |
+| Redis | Cache candidate embeddings and recommendation IDs, store the job-index version, and coordinate startup backfill. |
+| Nginx | Distribute browser traffic between two Spring Boot containers using sticky routing. |
 
-## Backend
+## Redis architecture
 
-* Java
-* Spring Boot
-* Spring MVC
-* Spring Security
-* Spring Data JPA
-* Hibernate
+Both application instances use the same Redis server. This lets a value computed by one instance be reused by the other instance and provides one coordination point for job-index changes and startup backfill.
 
-## Frontend
+```mermaid
+%%{init: {"flowchart": {"curve": "stepAfter"}}}%%
+flowchart TB
+    App1["Spring Boot app1"] --> CacheManager["Primary RedisCacheManager"]
+    App2["Spring Boot app2"] --> CacheManager
+    App1 --> RedisTemplate["StringRedisTemplate"]
+    App2 --> RedisTemplate
 
-* HTML
-* CSS
-* Thymeleaf
-* Bootstrap
+    CacheManager --> CandidateCache["candidateEmbeddings cache"]
+    CacheManager --> RecommendationCache["jobRecommendations cache"]
 
-## Database
+    CandidateCache --> CandidateKey["Key: candidateId + resumeHash + model"]
+    CandidateKey --> CandidateValue["Value: candidate embedding"]
+    CandidateValue --> CandidateTTL["TTL: 30 days"]
 
-* MySQL
+    RecommendationCache --> RecommendationKey["Key: candidateId + resumeHash + jobIndexVersion"]
+    RecommendationKey --> RecommendationValue["Value: ordered job IDs"]
+    RecommendationValue --> RecommendationTTL["TTL: 10 minutes"]
 
-## Tools & Technologies
+    RedisTemplate --> VersionKey["jobportal:job-index:version"]
+    RedisTemplate --> LockKey["jobportal:job-index:backfill-lock"]
 
-* Maven
-* Git
-* GitHub
-* IntelliJ IDEA / VS Code
+    JobChange["Job vector created or updated"] --> VersionKey
+    Startup1["app1 startup"] --> LockKey
+    Startup2["app2 startup"] --> LockKey
+    LockKey -->|Lock owner| Backfill["Run background Pinecone backfill"]
+    LockKey -->|Lock unavailable| Skip["Skip concurrent backfill"]
 
----
+    CacheFailure["Redis read or write failure"] --> ErrorHandler["CacheErrorHandler"]
+    ErrorHandler --> DirectCompute["Compute result directly and keep request available"]
+```
 
-# Project Architecture
+### Redis cache flow
+
+```mermaid
+%%{init: {"flowchart": {"curve": "stepAfter"}}}%%
+flowchart LR
+    Request["Recommendation request"] --> Lookup["Redis cache lookup"]
+    Lookup -->|Cache hit| CachedValue["Return cached value"]
+    Lookup -->|Cache miss| Compute["Run required AI or Pinecone operation"]
+    Compute --> Store["Serialize result as JSON and store with TTL"]
+    Store --> Result["Return result"]
+    CachedValue --> Result
+    Lookup -->|Redis unavailable| Fallback["Compute without caching"]
+    Fallback --> Result
+```
+
+| Redis cache or key | Purpose | Lifetime |
+|---|---|---|
+| `candidateEmbeddings` | Candidate embedding keyed by candidate, resume hash, and model. | 30 days |
+| `jobRecommendations` | Ordered recommended job IDs keyed by candidate, resume hash, and job-index version. | 10 minutes |
+| `jobportal:job-index:version` | Changes recommendation keys when job vectors change. | Persistent |
+| `jobportal:job-index:backfill-lock` | Prevents simultaneous startup backfill by multiple instances. | 30-minute lease |
+
+## AI pipeline architecture
+
+The application has two related AI pipelines. Recruiter jobs are converted into vectors and stored in Pinecone. Candidate resumes are converted into a temporary search vector, cached in Redis, and used to search those job vectors.
+
+### Recruiter job-indexing pipeline
+
+```mermaid
+%%{init: {"flowchart": {"curve": "stepAfter"}}}%%
+flowchart LR
+    Recruiter["Recruiter submits job form"] --> Security["Recruiter authorization and ownership check"]
+    Security --> Controller["JobPostActivityController"]
+    Controller --> JobService["JobPostActivityService"]
+    JobService --> SaveJob["Save job"]
+    SaveJob --> MySQL[(MySQL)]
+    SaveJob --> BuildText["Combine title, description, type, remote, location, and company"]
+    BuildText --> Chunks["Split text into chunks"]
+    Chunks --> EmbeddingModel["Ollama mxbai-embed-large"]
+    EmbeddingModel --> Pool["Mean-pool successful chunk vectors"]
+    Pool --> Pinecone[("Pinecone: upsert vector by job ID")]
+    Pinecone --> Version["Increment Redis job-index version"]
+    Version --> Redirect["Redirect to recruiter dashboard"]
+```
+
+### Candidate recommendation pipeline
+
+```mermaid
+%%{init: {"flowchart": {"curve": "stepAfter"}}}%%
+flowchart TB
+    Dashboard["Dashboard HTML is rendered"] --> Fetch["Browser GET /dashboard/recommendations"]
+    Fetch --> Authorization["Job Seeker authorization"]
+    Authorization --> Profile["Load candidate profile from MySQL"]
+    Profile --> Resume["Locate and validate resume PDF"]
+    Resume --> Hash["Calculate SHA-256 resume fingerprint"]
+    Hash --> EmbeddingLookup["Redis candidate embedding lookup"]
+
+    EmbeddingLookup -->|Hit| CandidateEmbedding["Candidate embedding"]
+    EmbeddingLookup -->|Miss| PDFBox["PDFBox text extraction"]
+    PDFBox --> Summary["Ollama llama3.2 technical summary"]
+    Summary --> Embed["Ollama mxbai-embed-large"]
+    Embed --> CacheEmbedding["Cache embedding in Redis for 30 days"]
+    CacheEmbedding --> CandidateEmbedding
+
+    CandidateEmbedding --> JobVersion["Read Redis job-index version"]
+    JobVersion --> RecommendationLookup["Redis recommendation-ID lookup"]
+    RecommendationLookup -->|Hit| RankedIds["Ordered job IDs"]
+    RecommendationLookup -->|Miss| VectorSearch["Query Pinecone top 5"]
+    VectorSearch --> CacheIds["Cache ordered IDs in Redis for 10 minutes"]
+    CacheIds --> RankedIds
+
+    RankedIds --> JobRepository["Load current jobs from MySQL"]
+    JobRepository --> RestoreOrder["Restore Pinecone ranking order"]
+    RestoreOrder --> Payload["Structured recommendation JSON"]
+    Payload --> Render["JavaScript renders recommendation cards"]
+```
+
+### Reload behavior
+
+For an unchanged resume and job index, both Redis lookups are cache hits. The application still validates and fingerprints the resume and loads current job records from MySQL, but it does not parse the PDF, call Ollama, or query Pinecone again.
+
+## Multi-instance startup and backfill
+
+```mermaid
+%%{init: {"flowchart": {"curve": "stepAfter"}}}%%
+flowchart TB
+    App1Ready["app1 ApplicationReadyEvent"] --> App1Lock["Try Redis SET-if-absent lock"]
+    App2Ready["app2 ApplicationReadyEvent"] --> App2Lock["Try Redis SET-if-absent lock"]
+    App1Lock --> SharedLock["Shared backfill lock"]
+    App2Lock --> SharedLock
+    SharedLock -->|Winner| LoadJobs["Load all jobs from MySQL"]
+    SharedLock -->|Other instance| SkipBackfill["Log and skip concurrent backfill"]
+    LoadJobs --> JobPipeline["Generate and upsert each pooled job vector"]
+    JobPipeline --> Increment["Increment Redis job-index version"]
+    Increment --> Release["Release lock only when owner matches"]
+```
+
+This lock prevents concurrent backfill. A completed-backfill version marker is still planned so that an instance starting much later also knows the same backfill has already completed.
+
+## Technology stack
+
+- Java 21
+- Spring Boot 4
+- Spring MVC and Thymeleaf
+- Spring Security
+- Spring Data JPA and Hibernate
+- Spring Data Redis
+- Spring AI with Ollama
+- PDFBox
+- Pinecone Java client
+- MySQL
+- Redis 7
+- Docker Compose and Nginx
+- Bootstrap and JavaScript
+- Maven
+
+## Project structure
 
 ```text
-Client/UI
-   ↓
-Controller Layer
-   ↓
-Service Layer
-   ↓
-Repository Layer
-   ↓
-MySQL Database
+src/main/java/com/luv2code/jobportal
+|-- config       Security, Pinecone, MVC, and Redis configuration
+|-- controller   MVC routes and recommendation endpoint
+|-- entity       JPA entities and view projections
+|-- repository   Spring Data JPA repositories
+|-- services     Business, AI, caching, and indexing services
+`-- util         Authentication and file utilities
+
+src/main/resources
+|-- templates    Thymeleaf pages
+|-- static       CSS, JavaScript, fonts, and images
+`-- application.properties
 ```
 
----
+## Local setup
 
-# Folder Structure
+### Prerequisites
 
-```text
-src
- ┣ main
- ┃ ┣ java
- ┃ ┃ ┗ com.luv2code.jobportal
- ┃ ┃    ┣ controller
- ┃ ┃    ┣ services
- ┃ ┃    ┣ repository
- ┃ ┃    ┣ entity
- ┃ ┃    ┣ config
- ┃ ┃    ┗ util
- ┃ ┗ resources
- ┃    ┣ templates
- ┃    ┣ static
- ┃    ┗ application.properties
-```
+- Java 21
+- MySQL with the existing `jobportal` database
+- Redis
+- Ollama with `llama3.2` and `mxbai-embed-large`
+- A Pinecone index compatible with the embedding dimension
+- A Pinecone API key supplied through `PINECONE_API_KEY`
 
----
+Do not store API keys or production passwords in source control. Supply them through environment variables or a secret manager.
 
-# Key Learning Outcomes
-
-This project helped in gaining hands-on experience with:
-
-* Spring Boot application development
-* Authentication and authorization
-* Database design and ORM
-* MVC architecture
-* CRUD operations
-* Repository and service patterns
-* Git and GitHub workflow
-* Backend project structuring
-* Real-world job portal workflow implementation
-
----
-
-# Installation & Setup
-
-## Prerequisites
-
-* Java 17+
-* Maven
-* MySQL
-* Git
-
-## Clone Repository
+### Start Redis
 
 ```bash
-git clone https://github.com/dexesh/JobPortal.git
+docker compose up -d redis
 ```
 
-## Navigate to Project
+### Run Spring Boot locally
 
 ```bash
-cd JobPortal
+./mvnw spring-boot:run
 ```
 
-## Configure Database
+On Windows PowerShell:
 
-Update `application.properties`:
-
-```properties
-spring.datasource.url=YOUR_DATABASE_URL
-spring.datasource.username=YOUR_USERNAME
-spring.datasource.password=YOUR_PASSWORD
+```powershell
+.\mvnw.cmd spring-boot:run
 ```
 
-## Run Application
+The local application is available at `http://localhost:8080`.
+
+## Multi-instance Docker setup
+
+Build the application JAR before building the image because the Dockerfile copies the packaged artifact from `target`.
 
 ```bash
-mvn spring-boot:run
+./mvnw clean package -DskipTests
+docker compose up --build
 ```
 
----
+Available endpoints:
 
-# Job Recommendation System
+- `http://localhost:8081` - app1
+- `http://localhost:8082` - app2
+- `http://localhost` - Nginx load balancer
 
-One of the key features of this project is an AI-powered Job Recommendation System designed to provide personalized and relevant job recommendations to users.
+The Docker applications connect to the host MySQL and Ollama services through `host.docker.internal`. Redis runs inside the Compose network with persistent AOF storage and an authenticated health check.
 
-## How The Recommendation System Works
+## Planned improvements
 
-### Step 1: User Profile & Resume Processing
+- Record a completed-backfill version so a later instance does not repeat the same completed startup backfill.
+- Move job indexing to a durable outbox and background worker with retries.
+- Add hybrid keyword and vector ranking with calibrated relevance scores.
+- Add cross-instance single-flight protection for simultaneous cache misses.
+- Use shared Redis-backed sessions and object storage for multi-host deployment.
+- Use managed Redis TLS, high availability, backups, monitoring, and secret management in production.
+- Expand automated unit, integration, security, and load tests.
 
-When a job seeker creates and saves their profile:
+## Repository
 
-* The user's resume is parsed and processed.
-* Unnecessary information such as:
+[github.com/dexesh/JobPortal](https://github.com/dexesh/JobPortal)
 
-  * Education details
-  * Hobbies
-  * Irrelevant noise
-    is filtered out.
-* A clean professional summary is generated from the resume.
+## Contact
 
-This processed summary helps improve recommendation quality by focusing only on important technical and professional skills.
+- GitHub: [github.com/dexesh](https://github.com/dexesh)
+- LinkedIn: [Devesh Choubey](https://www.linkedin.com/in/devesh-choubey-063022220/)
 
----
+## License
 
-### Step 2: Embedding Generation
-
-After generating the cleaned summary:
-
-* Text embeddings are created using Ollama embedding models.
-* These embeddings represent the semantic meaning of the candidate profile.
-* The embeddings are then stored inside Pinecone Vector Database.
-
----
-
-### Step 3: Recruiter Job Posting Processing
-
-When recruiters post new jobs:
-
-* The job description is processed.
-* Embeddings are generated for the job description using Ollama.
-* The generated job embeddings are stored in Pinecone.
-
----
-
-### Step 4: Semantic Matching & Recommendation
-
-The system performs semantic similarity matching between:
-
-* Candidate profile embeddings
-* Job description embeddings
-
-Using vector similarity search in Pinecone, the system retrieves the most relevant job opportunities for the user.
-
-This enables intelligent recommendations based on meaning and skills rather than simple keyword matching.
-
----
-
-## AI/ML Workflow
-
-```text
-Resume Upload
-      ↓
-Resume Parsing
-      ↓
-Noise Removal & Summary Generation
-      ↓
-Embedding Generation using Ollama
-      ↓
-Store Embeddings in Pinecone
-      ↓
-Recruiter Posts Job
-      ↓
-Generate Job Description Embeddings
-      ↓
-Store Job Embeddings in Pinecone
-      ↓
-Semantic Similarity Search
-      ↓
-Recommended Jobs Returned To User
-```
-
----
-
-## Technologies Used In Recommendation System
-
-### AI & Embeddings
-
-* Ollama
-* Embedding Models
-* LLM-based text processing
-
-### Vector Database
-
-* Pinecone Vector Database
-
-### Backend
-
-* Java
-* Spring Boot
-* Spring Data JPA
-
----
-
-## Concepts Demonstrated
-
-This feature demonstrates understanding of:
-
-* AI-powered recommendation systems
-* Retrieval-based architectures
-* Vector embeddings
-* Semantic search
-* Resume parsing
-* Vector databases
-* LLM integration
-* Backend + AI integration
-* Real-world intelligent system design
-
----
-
-# Future Improvements
-
-- Email notifications
--Implement event-driven architecture using RabbitMQ/Kafka for scalable asynchronous recommendation processing.
-- Add Redis caching layer for faster dashboard loading and reduced database/vector search latency.
--Introduce scheduled recommendation refresh mechanism based on newly posted jobs and user activity.
--Implement API rate limiting and load balancing for handling high concurrent traffic.
-- Add recommendation feedback loop to continuously improve matching accuracy using user behavior data.
-- Docker support
-- CI/CD pipeline integration
-- Real-time chat between recruiter and candidate
-- Cloud deployment
-
----
-
-# Screenshots
-
-Add application screenshots here:
-
-* Login Page
-* Dashboard
-* Job Listings
-* Recruiter Panel
-* Search Functionality
-
----
-
-# GitHub Repository
-
-Repository Link:
-
-[https://github.com/dexesh/JobPortal](https://github.com/dexesh/JobPortal)
-
----
-
-# About Me
-
-I am a backend-focused software developer passionate about Java, Spring Boot, backend systems, and scalable application development.
-
-This project was built to strengthen my understanding of enterprise backend development and real-world application architecture.
-
----
-
-# Contact
-
-GitHub: [https://github.com/dexesh](https://github.com/dexesh)
-
-LinkedIn:https://www.linkedin.com/in/devesh-choubey-063022220/
-
----
-
-# License
-
-This project is for educational and learning purposes.
+This project is intended for educational and learning purposes.
